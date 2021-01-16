@@ -173,12 +173,146 @@ static struct fuse_operations operations = {
     .read		= do_read,
 };
 
+struct dir{
+	char name[10];
+	char path[100];
+	struct dir* childs;
+	int childCnt;
+	int isFile; // 0 if is dir, 1 if is file
+};
+
+struct Queue { 
+    int front, rear;
+	int size; 
+    unsigned capacity; 
+    struct dir** array; 
+}; 
+   
+struct Queue* createQueue(unsigned capacity) 
+{ 
+    struct Queue* queue = (struct Queue*)malloc(sizeof(struct Queue)); 
+    queue->capacity = capacity;
+    queue->front = 0;
+	queue->size = 0;
+    queue->rear = capacity - 1; 
+
+    (*queue->array) = (struct dir*)malloc(queue->capacity * sizeof(struct dir));
+	
+    return queue; 
+} 
+  
+// Queue is full when size becomes 
+// equal to the capacity 
+int isFull(struct Queue* queue) 
+{ 
+    return (queue->size == queue->capacity); 
+} 
+  
+// Queue is empty when size is 0 
+int isEmpty(struct Queue* queue) 
+{ 
+    return (queue->size == 0); 
+} 
+  
+// Function to add an item to the queue. 
+// It changes rear and size 
+void enqueue(struct Queue* queue, struct dir* item) 
+{ 
+    if (isFull(queue)) 
+        return; 
+    queue->rear = (queue->rear + 1) % queue->capacity; 
+    queue->array[queue->rear] = item;
+    queue->size = queue->size + 1; 
+    printf("%s enqueued to queue\n", item->name); 
+} 
+  
+// Function to remove an item from queue. 
+// It changes front and size 
+struct dir* dequeue(struct Queue* queue) 
+{ 
+    if (isEmpty(queue))
+        return NULL; 
+    struct dir* item = queue->array[queue->front];
+    queue->front = (queue->front + 1) % queue->capacity; 
+    queue->size = queue->size - 1; 
+    return item; 
+} 
+  
+// Function to get front of queue 
+struct dir* front(struct Queue* queue) 
+{ 
+    if (isEmpty(queue)) 
+        return NULL; 
+    return queue->array[queue->front];
+} 
+  
+// Function to get rear of queue 
+struct dir* rear(struct Queue* queue) 
+{ 
+    if (isEmpty(queue)) 
+        return NULL; 
+    return queue->array[queue->rear]; 
+} 
+
+void make_dirs_DFS(struct dir* root){
+}
+
 int main( int argc, char *argv[] )
 {
-	make_directory("/olurmusun");
-	make_directory("/oll");
-	make_file("/ol_dosyasi");
-	write_to_file("/ol_dosyasi","ol artik");
+	make_directory("/dir1");
+	make_directory("/dir2");
+	make_file("/dir0_1");
+	write_to_file("/dir0_1","rootdaki file");
+	
+	struct dir myDir; //root dir
+	myDir.childs = (struct dir*)malloc(100 * sizeof(struct dir));
+	strcat(myDir.name, "/dir0");
+	myDir.childCnt = 0;
+
+	struct dir myDir1;
+	myDir1.childs = (struct dir*)malloc(100 * sizeof(struct dir));;
+	strcat(myDir.name, "/dir1");
+	myDir1.childCnt = 0;
+	myDir.childs[myDir.childCnt] = myDir1;
+	myDir.childCnt++;
+	strcpy(myDir1.path, myDir.path);
+	strcat(myDir1.path, myDir1.name);
+	
+	struct dir myDir2;
+	myDir2.childs = (struct dir*)malloc(100 * sizeof(struct dir));;
+	myDir2.childCnt = 0;
+	myDir.childs[myDir.childCnt] = myDir2;
+	myDir.childCnt++;
+	strcat(myDir.path, myDir1.path); 
+
+	struct dir myDir3;
+	myDir3.childs = (struct dir*)malloc(100 * sizeof(struct dir));;
+	myDir3.childCnt = 0;
+	myDir.childs[myDir.childCnt] = myDir3;
+	myDir.childCnt++;
+	strcat(myDir.path, myDir1.path); 
+
+	struct dir myDir1_1;
+	myDir1_1.childs = (struct dir*)malloc(100 * sizeof(struct dir));;
+	myDir1_1.childCnt = 0;
+	myDir1.childs[myDir1.childCnt] = myDir1_1;
+	myDir1.childCnt++;
+	strcat(myDir.path, myDir1.path); 
+
+	struct dir myDir1_2;
+	myDir1_2.childs = (struct dir*)malloc(100 * sizeof(struct dir));;
+	myDir1_2.childCnt = 0;
+	myDir1.childs[myDir1.childCnt] = myDir1_2;
+	myDir1.childCnt++;	
+	strcat(myDir.path, myDir1.path); 
+	
+	struct dir myDir3_1;
+	myDir3_1.childs = (struct dir*)malloc(100 * sizeof(struct dir));;
+	myDir3_1.childCnt = 0;
+	myDir3.childs[myDir3.childCnt] = myDir3_1;
+	myDir3.childCnt++;
+	strcat(myDir.path, myDir1.path); 
+
 	return fuse_main( argc, argv, &operations, NULL );
 	
 }
