@@ -99,15 +99,18 @@ static int do_getattr( const char *path, struct stat *stbuf, struct fuse_file_in
 
         if (ptr->child != NULL) {
             stbuf->st_mode = S_IFDIR | 0755;
+			stbuf->st_nlink = 2;
         }
 		
 		else {
             if (ptr->valuestring){
 			    stbuf->st_mode = S_IFREG | 0666;
+				stbuf->st_nlink = 1;
                 stbuf->st_size = strlen(ptr->valuestring);
 			}
             else
             	stbuf->st_mode = S_IFDIR | 0755;
+				stbuf->st_nlink = 2;
         }
     }
     return res;
