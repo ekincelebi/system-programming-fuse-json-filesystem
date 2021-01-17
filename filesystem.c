@@ -1,4 +1,4 @@
-#define FUSE_USE_VERSION 30
+#define FUSE_USE_VERSION 26
 
 #include <fuse.h>
 #include <stdio.h>
@@ -8,177 +8,167 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <libgen.h>
+#include <unistd.h>
+#include <cjson/cJSON.h>
 
-// ... //
+//// cJSON methods
 
-char dir_list[ 256 ][ 256 ];
-int curr_dir_idx = -1;
+cJSON * root;
 
-char files_list[ 256 ][ 256 ];
-int curr_file_idx = -1;
+//reads the input file to a char pointer
+static void read_json_file(const char * filename){
+    char * myString = "0";
+    long length;
+    FILE * f = fopen(filename, "rb");
 
-char files_content[ 256 ][ 256 ];
-int curr_file_content_idx = -1;
+    if(f){
+        fseek(f, 0, SEEK_END);
+        length = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        myString = malloc(length);
 
-void add_dir( const char *dir_name )
-{
-	curr_dir_idx++;
-	strcpy( dir_list[ curr_dir_idx ], dir_name );
+        if(myString){
+            fread(myString, 1, length, f);
+        }
+        fclose(f);
+    }
+    root = cJSON_Parse(myString);
 }
 
-int is_dir( const char *path )
-{	
-	int curr_idx;
-	path++; // Eliminating "/" in the path
-	
-	for ( curr_idx = 0; curr_idx <= curr_dir_idx; curr_idx++ ){
-		if ( strcmp( path, dir_list[ curr_idx ] ) == 0 ){
-			return 1;
+static cJSON* cJSON_by_key(cJSON *parent, const char *key)
+{
+    cJSON *dentry = parent;
+    while (dentry) {
+		printf("%s %s\n", dentry->string, key);
+        if (strcmp(dentry->string, key) == 0){
+            printf("condition holds\n");
+			return dentry;
 		}
-	}
-	
-	return 0;
+        dentry = dentry->next;
+    }
+    return NULL;
 }
 
-void add_file( const char *filename )
-{
-	curr_file_idx++;
-	strcpy( files_list[ curr_file_idx ], filename );
-	
-	curr_file_content_idx++;
-	strcpy( files_content[ curr_file_content_idx ], "" );
-}
-
-int is_file( const char *path )
-{
-	int curr_idx;
-	path++; // Eliminating "/" in the path
-	
-	for (curr_idx = 0; curr_idx <= curr_file_idx; curr_idx++ ){
-		if ( strcmp( path, files_list[ curr_idx ] ) == 0 ){
-			return 1;
+static cJSON * cJSON_by_path(cJSON * parent, const char * path){
+	char *next_parent_string;
+	cJSON * next_parent, * parent_data = parent->child;
+	if (strcmp("/", path) == 0)
+        return root;
+	else{
+		int i = 1;
+		///     Path: /club/basketball
+		for(; path[i]; i++){
+			if (path[i] == '/'){
+				next_parent_string = calloc(i - 1, sizeof(char));
+            	memcpy(next_parent_string, path + 1, i - 1);
+				next_parent = cJSON_by_key(parent_data, next_parent_string);
+				printf("by_path next parent str %s, new path %s\n", next_parent->string, path + i);
+				return cJSON_by_path(next_parent, path+i);
+			}
 		}
+		return cJSON_by_key(parent->child, path+1);
 	}
-	
-	return 0;
 }
 
-int get_file_index( const char *path )
-{
-	int curr_idx;
-	path++; // Eliminating "/" in the path
-	
-	for ( curr_idx = 0; curr_idx <= curr_file_idx; curr_idx++ ){
-		if ( strcmp( path, files_list[ curr_idx ] ) == 0 ){
-			return curr_idx;
-			\
-		}
-	}
-	
-	return -1;
-}
 
-void write_to_file( const char *path, const char *new_content )
+///// json methods
+
+static int do_getattr( const char *path, struct stat *stbuf, struct fuse_file_info *fi )
 {
-	int file_idx = get_file_index( path );
-	
-	if ( file_idx == -1 ){
-		printf("no such file");
-		return;
-	}
+	int res = 0;
+
+	// ls mnt
+    if (strcmp(path, "/") == 0) {
+        stbuf->st_mode = S_IFDIR | 0755;
+        stbuf->st_nlink = 2;
+    }
+
+	//ls mnt/class...
+	else{
+
+        memset(stbuf, 0, sizeof(struct stat));
+        cJSON *dentry = cJSON_by_path(root, path);
+
+        if (dentry == NULL) {
+            stbuf->st_mode = S_IFREG | 0666;
+            return -ENOENT;
+        }
+
+        cJSON *dentry_child = dentry->child;
+
+        if (dentry->child != NULL) {
+            stbuf->st_mode = S_IFDIR | 0755;
+        }
 		
-	strcpy( files_content[ file_idx ], new_content ); 
-}
+		else {
+            stbuf->st_mode = S_IFREG | 0666;
+            if (dentry->valuestring)
+                stbuf->st_size = strlen(dentry->valuestring);
+            else
+                stbuf->st_size = 0;
+        }
+    }
+    return res;
 
-// ... //
-
-static int do_getattr( const char *path, struct stat *st )
-{
-	st->st_uid = getuid(); // The owner of the file/directory is the user who mounted the filesystem
-	st->st_gid = getgid(); // The group of the file/directory is the same as the group of the user who mounted the filesystem
-	st->st_atime = time( NULL ); // The last "a"ccess of the file/directory is right now
-	st->st_mtime = time( NULL ); // The last "m"odification of the file/directory is right now
-	
-	if ( strcmp( path, "/" ) == 0 || is_dir( path ) == 1 )
-	{
-		st->st_mode = S_IFDIR | 0755;
-		st->st_nlink = 2; // Why "two" hardlinks instead of "one"? The answer is here: http://unix.stackexchange.com/a/101536
-	}
-	else if ( is_file( path ) == 1 )
-	{
-		st->st_mode = S_IFREG | 0644;
-		st->st_nlink = 1;
-		st->st_size = 1024;
-	}
-	else
-	{
-		return -ENOENT;
-	}
-	
-	return 0;
 }
 
 static int do_readdir( const char *path, void *buffer, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi )
 {
-	int curr_idx;
-	filler( buffer, ".", NULL, 0 ); // Current Directory
-	filler( buffer, "..", NULL, 0 ); // Parent Directory
-	
-	if ( strcmp( path, "/" ) == 0 ) // If the user is trying to show the files/directories of the root directory show the following
-	{
-		for ( curr_idx = 0; curr_idx <= curr_dir_idx; curr_idx++ ){
-			filler( buffer, dir_list[ curr_idx ], NULL, 0 );}
-	
-		for ( curr_idx = 0; curr_idx <= curr_file_idx; curr_idx++ ){
-			filler( buffer, files_list[ curr_idx ], NULL, 0 );}
-	}
-	
-	return 0;
+	cJSON *dir, *dentry;
+
+    dir = cJSON_by_path(root, path);
+
+    if (dir == NULL)
+        return -ENOENT;
+
+
+    dentry = dir->child;
+
+    filler(buffer, ".", NULL, 0);
+    filler(buffer, "..", NULL, 0);
+    while (dentry) {
+        filler(buffer, dentry->string , NULL, 0);
+        dentry = dentry->next;
+    }
+    return 0;
 }
 
 static int do_read( const char *path, char *buffer, size_t size, off_t offset, struct fuse_file_info *fi )
 {
-	int file_idx = get_file_index( path );
-	
-	if ( file_idx == -1 )
-		return -1;
-	
-	char *content = files_content[ file_idx ];
-	
-	memcpy( buffer, content + offset, size );
-		
-	return strlen( content ) - offset;
-}
+    size_t len;
+    cJSON *dentry_data, *dentry = cJSON_by_path(root, path);
 
+    if (!dentry)
+        return -ENOENT;
 
+    if (dentry->valuestring)
+        len = strlen(dentry->valuestring);
+    else
+        return 0;
 
-void make_directory( const char *path)
-{
-	path++;
-	add_dir( path );
+    if (offset < len) {
+        if (offset + size > len)
+            size = len - offset;
+        memcpy(buffer, dentry->valuestring + offset, size);
+    } 
+	else
+        size = 0;
 
-}
-
-void make_file( const char *path)
-{
-	path++;
-	add_file( path );
-	
+    return size;
 }
 
 
 static struct fuse_operations operations = {
-    .getattr	= do_getattr,
-    .readdir	= do_readdir,
-    .read		= do_read,
+    .getattr	= do_getattr, //cd
+    .readdir	= do_readdir, //ls
+    .read		= do_read, //cat
 };
 
 int main( int argc, char *argv[] )
 {
-	make_directory("/olurmusun");
-	make_directory("/oll");
-	make_file("/ol_dosyasi");
-	write_to_file("/ol_dosyasi","ol artik");
+	read_json_file("example.json");
+	cJSON * deneme = cJSON_by_path(root, "/club/basketball");
 	return fuse_main( argc, argv, &operations, NULL );
 	
 }
