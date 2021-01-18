@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include <cjson/cJSON.h>
 
-//// cJSON methods
+/*/////////////////////////// cJSON methods /////////////////////////////////////*/
 
 cJSON * root;
 const char * filename = "example.json";
@@ -70,8 +70,68 @@ static cJSON * cJSON_by_path(cJSON * parent, const char * path){
 	}
 }
 
+static char * cJSON_parent(const char * path){
+	
+	if(strcmp(path, "/") == 0){
+		return "/";
+	}
 
-///// json methods
+	//cJSON * ptr = cJSON_by_path(root, path);
+	//if(ptr == NULL) return NULL;
+
+	////asd/adg
+	char * parent_path = NULL;
+	int i = strlen(path) -1;
+	printf("path: %s\n", path);
+	printf("length of path: %d\n", i);
+
+	for(; path[i] && i>=0; i--){
+			if (path[i] == '/'){
+				if(i==0){ //parent is root
+					parent_path = calloc(i+1, sizeof(char));
+					strcpy(parent_path, "/");
+				}
+				else{
+					parent_path = calloc(i, sizeof(char));
+					memcpy(parent_path, path, i);
+				}
+				break;
+			}
+		}
+	return parent_path; 
+}
+
+//// /asd/def
+
+static char * cJSON_basename(const char * path){
+	char * basename, * parent_path;
+	parent_path = cJSON_parent(path);
+	if(strcmp(parent_path, "/")!=0){
+		int parent_len = strlen(parent_path); 
+		int path_len = strlen(path); 
+		int diff = path_len - parent_len; 
+		basename = calloc(diff, sizeof(char));
+		memcpy(basename, path + parent_len +1, diff-1);
+	}
+	if(strcmp(parent_path, "/")==0){
+		int parent_len = strlen(parent_path); 
+		int path_len = strlen(path); 
+		int diff = path_len - parent_len; 
+		basename = calloc(diff, sizeof(char));
+		memcpy(basename, path + parent_len, diff);
+	}
+	return basename;
+}
+
+static void cJSON_edit_source(){
+	FILE * f = fopen(filename, "w");
+	char * newJsonText = cJSON_Print(root);
+	if(newJsonText) fprintf(f, "%s", newJsonText);
+	else fprintf(stderr, "Cannot write to the file!");
+	fclose(f);
+}
+
+/*/////////////////////////// cJSON methods /////////////////////////////////////*/
 
 static int do_getattr( const char *path, struct stat *stbuf, struct fuse_file_info *fi )
 {
@@ -162,59 +222,53 @@ static int do_read( const char *path, char *buffer, size_t size, off_t offset, s
     return size;
 }
 
-static char * cJSON_parent(const char * path){
-	
-	if(strcmp(path, "/") == 0){
-		return "/";
-	}
-
-	cJSON * ptr = cJSON_by_path(root, path);
-	if(ptr == NULL) return NULL;
-
-
-	char * parent_path = NULL;
-	int i = strlen(path) -1;
-
-	for(; path[i] && i>=0; i--){
-			if (path[i] == '/'){
-				if(i==0){ //parent is root
-					parent_path = calloc(i+1, sizeof(char));
-					strcpy(parent_path, "/");
-				}
-				else{
-					parent_path = calloc(i, sizeof(char));
-					memcpy(parent_path, path, i);
-				}
-				break;
-			}
-		}
-
-	return parent_path; 
-}
 
 static int do_unlink( const char *path, struct fuse_file_info *fi ){
 	
 	cJSON * deleted_entry = cJSON_by_path(root, path);
-	cJSON * parent = cJSON_by_path(root, cJSON_parent(path));
 	char * parent_path = cJSON_parent(path);
+	cJSON * parent = cJSON_by_path(root, parent_path);
 	
 	if(deleted_entry == NULL)
 		return -ENOENT;
 
 	if(parent && deleted_entry) cJSON_DetachItemViaPointer(parent, deleted_entry);
 	
-	FILE * f = fopen(filename, "w");
-
-	char * newJsonText = cJSON_Print(root);
-
-	if(newJsonText) fprintf(f, "%s", newJsonText);
-	else fprintf(stderr, "Deleted but cannot write to the file!");
-	fclose(f);
+	cJSON_edit_source();
 	return 0;
 }
 
 static int do_open(const char * path, struct fuse_file_info *fi){
+	
 	return 0;
+}
+
+static int do_mknod( const char *path, char *buffer, size_t size, off_t offset, struct fuse_file_info *fi ){
+
+	char * child_path = cJSON_basename(path);
+	char *dir_path = cJSON_parent(path);
+	printf("in mknod, path is %s\n", path);
+	printf("in mknod, dir path is %s\n", dir_path);
+	printf("in mknod, child path is %s\n", child_path);
+	// set directory path that file is created in.
+	/*char* last_slash_pos = strrchr(path, '/');
+	strcpy(new_filename, last_slash_pos+1);
+	/*if (last_slash_pos != NULL) { 
+		*last_slash_pos = '\0';
+	}*/
+
+	// create cJSONs respectively
+	cJSON * new_file_dir = cJSON_by_path(root, dir_path);
+	cJSON * new_file = cJSON_CreateString(child_path);
+	new_file->valuestring = calloc(1, sizeof(char));
+	strcpy(new_file->valuestring, " ");
+	cJSON_AddItemToObject(new_file_dir, child_path, new_file);
+	cJSON_edit_source();
+	return 0;
+}
+
+static int do_create(const char *path, char *buffer, size_t size, off_t offset, struct fuse_file_info *fi){
+	return do_mknod(path, buffer, size, offset, fi);
 }
 
 static struct fuse_operations operations = {
@@ -222,9 +276,10 @@ static struct fuse_operations operations = {
     .readdir	= do_readdir, //ls
     .read		= do_read, //cat
 	.unlink		= do_unlink,
-	.open		= do_open,
+	.open		= do_mknod,
 	//.mkdir		= do_mkdir,
-	//.mknod		= do_mknod,
+	//.write		= do_write,
+	.create		= do_create,
 };
 
 int main( int argc, char *argv[] )
