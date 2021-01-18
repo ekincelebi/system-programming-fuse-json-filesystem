@@ -206,8 +206,9 @@ static int do_unlink( const char *path, struct fuse_file_info *fi ){
 	FILE * f = fopen(filename, "w");
 
 	char * newJsonText = cJSON_Print(root);
-
+	printf("%s\n", newJsonText);
 	if(newJsonText) fprintf(f, "%s", newJsonText);
+
 	else fprintf(stderr, "Deleted but cannot write to the file!");
 	fclose(f);
 	return 0;
