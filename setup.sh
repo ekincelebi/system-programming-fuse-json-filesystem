@@ -13,7 +13,9 @@ then
 	exit 1
 fi
 
-gcc filesystem.c -o filesystem -lcjson -lfuse -D_FILE_OFFSET_BITS=6
+gcc filesystem.c -o filesystem -lcjson -lfuse -D_FILE_OFFSET_BITS=64
+
+chmod 755 filesystem
 
 ./filesystem -d mnt
 
