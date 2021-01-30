@@ -1,10 +1,11 @@
 #!/bin/bash
 
-if [ ! -d "./mount" ]
+if [ ! -d "./mnt" ]
 then
 	mkdir mnt
 else
 	fusermount -u mnt
+	rm mnt
 fi
 
 if [ ! -f "example.json" ]
